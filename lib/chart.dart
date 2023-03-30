@@ -35,6 +35,8 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
     return [sortedList.first, sortedList.last];
   }
 
+  bool showAverage = false;
+
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -112,8 +114,41 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
                   ),
                 ),
               ),
+              SizedBox(
+                width: 60,
+                height: 34,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      showAverage = !showAverage;
+                    });
+                  },
+                  child: Text(
+                    'Avg',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: showAverage ? Colors.white.withOpacity(0.5) : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
               Stack(
                 children: <Widget>[
+                  if(showAverage)
+                  AspectRatio(
+                    aspectRatio: 2,
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        right: 18,
+                        left: 12,
+                        top: 24,
+                        bottom: 12,
+                      ),
+                      child: LineChart(
+                        avgData(),
+                      ),
+                    ),
+                  ),
                   AspectRatio(
                     aspectRatio: 2,
                     child: Padding(
@@ -335,9 +370,30 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
         .toList();
   }
 
+  List<FlSpot> getFLSpotForDateAverage(DateTime day){
+    int total = 0;
+    List<Occupancy> dayData = widget.data
+        .where((element) =>
+    DateTime(day.year, day.month, day.day) ==
+        DateTime(element.dateTime.year, element.dateTime.month,
+            element.dateTime.day))
+        .toList();
+    dayData.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
+
+    for (var element in widget.data.where((element) =>
+    DateTime(day.year, day.month, day.day) ==
+        DateTime(element.dateTime.year, element.dateTime.month,
+            element.dateTime.day))) {
+      total += element.amount;
+    }
+    return dayData
+        .map((e) => FlSpot(dayData.indexOf(e) as double, total/dayData.length))
+        .toList();
+  }
+
   LineChartData mainData() {
     var maxYVal =
-        widget.data.map((e) => e.amount).toList().reduce(max).toDouble();
+    widget.data.map((e) => e.amount).toList().reduce(max).toDouble();
     return LineChartData(
       gridData: FlGridData(
         show: true,
@@ -359,13 +415,13 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
       ),
       lineTouchData: LineTouchData(
         touchTooltipData: LineTouchTooltipData(
-          tooltipBgColor: Colors.grey,
+          //tooltipBgColor: Colors.grey,
           getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-            return touchedBarSpots
-                .map((e) => LineTooltipItem(
-                    "${getDataForDate(selectedDate)[e.x.toInt()].amount}\n(${getDataForDate(selectedDate)[e.x.toInt()].percent} %)",
-                    TextStyle()))
-                .toList();
+            return [
+              LineTooltipItem(
+                "${getDataForDate(selectedDate)[touchedBarSpots[0].x.toInt()].amount}\n(${getDataForDate(selectedDate)[touchedBarSpots[0].x.toInt()].percent} %)",
+                const TextStyle(color: Colors.tealAccent)),
+            ];
           },
         ),
       ),
@@ -412,7 +468,7 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
           barWidth: 5,
           isStrokeCapRound: true,
           dotData: FlDotData(
-            show: true,
+            show: false,
           ),
           belowBarData: BarAreaData(
             show: true,
@@ -422,6 +478,77 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
                   .toList(),
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  LineChartData avgData() {
+    var maxYVal =
+    widget.data.map((e) => e.amount).toList().reduce(max).toDouble();
+    return LineChartData(
+      gridData: FlGridData(
+        show: false,
+        drawVerticalLine: false,
+        horizontalInterval: 10,
+        verticalInterval: 5,
+        getDrawingHorizontalLine: (value) {
+          return FlLine(
+            color: Colors.lightBlue,
+            strokeWidth: 1,
+          );
+        },
+        getDrawingVerticalLine: (value) {
+          return FlLine(
+            color: Colors.teal,
+            strokeWidth: 1,
+          );
+        },
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        topTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 55,
+            interval: 1,
+            getTitlesWidget: bottomTitleWidgets,
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1,
+            getTitlesWidget: leftTitleWidgets,
+            reservedSize: 42,
+          ),
+        ),
+      ),
+      borderData: FlBorderData(
+        show: true,
+        border: Border.all(color: const Color(0xff37434d)),
+      ),
+      minX: 0,
+      maxX: getDataForDate(selectedDate).length.toDouble() - 1,
+      minY: 0,
+      maxY: maxYVal * 1.1,
+      lineBarsData: [
+        LineChartBarData(
+          show: true,
+          spots: getFLSpotForDateAverage(selectedDate),
+          isCurved: false,
+          color: const Color.fromRGBO(179, 210, 65, 1),
+          dotData: FlDotData(
+            show: false,
+          ),
+          barWidth: 5,
+          isStrokeCapRound: true,
         ),
       ],
     );
