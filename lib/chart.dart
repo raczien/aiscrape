@@ -1,275 +1,231 @@
 import 'dart:math';
 
+import 'package:aiscrape/firebaseService.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:table_calendar/table_calendar.dart';
 
 import 'Occupancy.dart';
 
-class OccupancyDataChart extends StatefulWidget {
-  final List<Occupancy> data;
+class OccupancyChart extends StatefulWidget {
+  final Function getDate;
+  final Function(DateTime) setDate;
 
-  const OccupancyDataChart({super.key, required this.data});
+  const OccupancyChart({Key? key, required this.getDate, required this.setDate})
+      : super(key: key);
 
   @override
-  State<OccupancyDataChart> createState() => _OccupancyDataChartState();
+  State<OccupancyChart> createState() => _OccupancyChartState();
 }
 
-class _OccupancyDataChartState extends State<OccupancyDataChart> {
+class _OccupancyChartState extends State<OccupancyChart> {
+  Future<List<Occupancy>> getData() async {
+    return await FirebaseService.getDataForDate(widget.getDate());
+  }
+
+  late List<Occupancy> data;
+  List<LineChartBarData> lineBarsData = [];
+  List<Occupancy> lastWeekData = [];
+  var currentSelectedDate = DateTime.now();
+  bool checkLastWeekSummary = false;
+
+  @override
+  Widget build(BuildContext context) {
+    var calendarDate = widget.getDate();
+    if (DateTime(currentSelectedDate.year, currentSelectedDate.month,
+            currentSelectedDate.day) !=
+        DateTime(calendarDate.year, calendarDate.month, calendarDate.day)) {
+      lineBarsData = [];
+    }
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: FilledButton.tonal(
+            onPressed: setLastWeekLineBarData,
+            /*style:
+                OutlinedButton.styleFrom(primary: Colors.teal.shade500),*/
+            child: const Text(
+              "Vergleich mit Vorwoche",
+              style: TextStyle(
+                color: Color.fromRGBO(165, 187, 65, 1.0),
+                fontSize: 20,
+              ),
+            ),
+          ),
+        ),
+        FutureBuilder(
+            future: getData(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData) {
+                currentSelectedDate = widget.getDate();
+                data = snapshot.data ?? [];
+                return AspectRatio(
+                  aspectRatio: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.only(
+                      right: 18,
+                      left: 12,
+                      top: 24,
+                      bottom: 12,
+                    ),
+                    child: LineChart(
+                      checkLastWeekSummary ? mainData() : mainData(),
+                    ),
+                  ),
+                );
+              } else {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+            }),
+      ],
+    );
+  }
+
+  setLastWeekLineBarData() async {
+    var spots = await getFLSpotForLastWeek(
+        (widget.getDate() as DateTime).subtract(const Duration(days: 7)));
+    var data = LineChartBarData(
+      spots: spots,
+      isCurved: false,
+      gradient: const LinearGradient(
+        colors: [Colors.orange, Colors.deepOrange],
+      ),
+      barWidth: 5,
+      isStrokeCapRound: true,
+      dotData: FlDotData(
+        show: false,
+      ),
+    );
+    setState(() {
+      lineBarsData.add(data);
+    });
+  }
+
+  LineChartData mainData() {
+    var allData = data + lastWeekData;
+    var maxYVal = allData.map((e) => e.amount).toList().reduce(max).toDouble();
+    return LineChartData(
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: true,
+        horizontalInterval: 10,
+        verticalInterval: 4,
+        getDrawingHorizontalLine: (value) {
+          return FlLine(
+            color: Colors.lightBlue,
+            strokeWidth: 1,
+          );
+        },
+        getDrawingVerticalLine: (value) {
+          return FlLine(
+            color: Colors.teal,
+            strokeWidth: 1,
+          );
+        },
+      ),
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+            return touchedBarSpots.map((e) {
+              return LineTooltipItem("${e.y} (${(e.y / 485 * 100).toInt()} %)",
+                  const TextStyle(color: Colors.tealAccent));
+            }).toList();
+          },
+        ),
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        topTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 55,
+            interval: 1,
+            getTitlesWidget: bottomTitleWidgets,
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1,
+            getTitlesWidget: leftTitleWidgets,
+            reservedSize: 42,
+          ),
+        ),
+      ),
+      borderData: FlBorderData(
+        show: true,
+        border: Border.all(color: const Color(0xff37434d)),
+      ),
+      minX: 0,
+      maxX: data.length.toDouble() - 1,
+      minY: 0,
+      maxY: maxYVal * 1.1,
+      lineBarsData: [
+        LineChartBarData(
+          spots: getFLSpotForDate(),
+          isCurved: false,
+          gradient: LinearGradient(
+            colors: gradientColors,
+          ),
+          barWidth: 5,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: false,
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              colors: gradientColors
+                  .map((color) => color.withOpacity(0.3))
+                  .toList(),
+            ),
+          ),
+        ),
+        ...lineBarsData,
+      ],
+    );
+  }
+
   List<Color> gradientColors = [
     Colors.tealAccent,
     Colors.teal.shade700,
   ];
 
-  DateTime nearestQuarter(DateTime val) {
-    return DateTime(val.year, val.month, val.day, val.hour,
-        [15, 30, 45, 60][(val.minute / 15).floor()]);
+  List<FlSpot> getFLSpotForDate() {
+    return data
+        .map((e) => FlSpot(data.indexOf(e) as double, e.amount as double))
+        .toList();
   }
 
-  DateTime selectedDate = DateTime.now();
-  DateTime focussedDate = DateTime.now();
-
-  List<Occupancy> findMinMaxDate() {
-    List<Occupancy> sortedList = widget.data;
-    sortedList.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
-    return [sortedList.first, sortedList.last];
-  }
-
-  bool showAverage = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width > 1000
-              ? MediaQuery.of(context).size.width * 0.6
-              : MediaQuery.of(context).size.width,
-          child: Column(
-            children: [
-              Container(
-                color: Colors.teal.shade400,
-                child: ClipRRect(
-                  child: TableCalendar(
-                    startingDayOfWeek: StartingDayOfWeek.monday,
-                    firstDay: findMinMaxDate()[0].dateTime,
-                    lastDay: findMinMaxDate()[1].dateTime,
-                    focusedDay: selectedDate,
-                    daysOfWeekStyle: const DaysOfWeekStyle(
-                      weekdayStyle: TextStyle(
-                        color: Colors.white,
-                      ),
-                      weekendStyle: TextStyle(
-                        color: Colors.white,
-                      ),
-                    ),
-                    calendarStyle: CalendarStyle(
-                      isTodayHighlighted: true,
-                      todayDecoration: BoxDecoration(
-                        color: Colors.teal.shade700,
-                        shape: BoxShape.circle,
-                      ),
-                      todayTextStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                      ),
-                      selectedTextStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                      ),
-                      selectedDecoration: BoxDecoration(
-                        color: Colors.teal.shade900,
-                        shape: BoxShape.circle,
-                      ),
-                      disabledTextStyle: const TextStyle(
-                        color: Colors.black26,
-                        fontSize: 20,
-                      ),
-                      outsideDaysVisible: false,
-                      defaultTextStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                      ),
-                      weekendTextStyle: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                      ),
-                    ),
-                    headerStyle: const HeaderStyle(
-                      formatButtonVisible: false,
-                      titleCentered: true,
-                    ),
-                    onPageChanged: (focusedDay) {
-                      selectedDate = focusedDay;
-                    },
-                    onDaySelected: (selectedDay, focusedDay) {
-                      setState(() {
-                        selectedDate = selectedDay;
-                        focussedDate = focusedDay;
-                      });
-                    },
-                    selectedDayPredicate: (DateTime date) {
-                      return isSameDay(selectedDate, date);
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 60,
-                height: 34,
-                child: TextButton(
-                  onPressed: () {
-                    setState(() {
-                      showAverage = !showAverage;
-                    });
-                  },
-                  child: Text(
-                    'Avg',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: showAverage ? Colors.white.withOpacity(0.5) : Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-              Stack(
-                children: <Widget>[
-                  if(showAverage)
-                  AspectRatio(
-                    aspectRatio: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        right: 18,
-                        left: 12,
-                        top: 24,
-                        bottom: 12,
-                      ),
-                      child: LineChart(
-                        avgData(),
-                      ),
-                    ),
-                  ),
-                  AspectRatio(
-                    aspectRatio: 2,
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        right: 18,
-                        left: 12,
-                        top: 24,
-                        bottom: 12,
-                      ),
-                      child: LineChart(
-                        mainData(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget bottomTitleWidgets(double value, TitleMeta meta) {
-    var currData = getDataForDate(selectedDate);
-    const style = TextStyle(
-      fontWeight: FontWeight.bold,
-      fontSize: 16,
-    );
-    Widget text;
-    if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("01:00:00"))
-      text = const Text('1:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("02:00:00"))
-      text = const Text('\n2:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("06:00:00"))
-      text = const Text('\n6:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("07:00:00"))
-      text = const Text('7:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("08:00:00"))
-      text = const Text('\n8:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("09:00:00"))
-      text = const Text('9:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("10:00:00"))
-      text = const Text('\n10:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("11:00:00"))
-      text = const Text('11:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("12:00:00"))
-      text = const Text('\n12:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("13:00:00"))
-      text = const Text('13:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("14:00:00"))
-      text = const Text('\n14:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("15:00:00"))
-      text = const Text('15:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("16:00:00"))
-      text = const Text('\n16:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("17:00:00"))
-      text = const Text('17:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("18:00:00"))
-      text = const Text('\n18:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("19:00:00"))
-      text = const Text('19:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("20:00:00"))
-      text = const Text('\n20:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("21:00:00"))
-      text = const Text('21:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("22:00:00"))
-      text = const Text('\n22:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("23:00:00"))
-      text = const Text('23:00', style: style);
-    else if (nearestQuarter(currData[value.toInt()].dateTime)
-        .toString()
-        .contains("00:00:00"))
-      text = const Text('\n00:00', style: style);
-    else
-      text = Text('');
-
-    return SideTitleWidget(
-      axisSide: meta.axisSide,
-      child: text,
-    );
+  Future<List<FlSpot>> getFLSpotForLastWeek(DateTime day) async {
+    var lastWeeksData = await FirebaseService.getDataForDate(day);
+    lastWeeksData.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
+    setState(() {
+      lastWeekData = lastWeeksData;
+    });
+    var spots = lastWeeksData
+        .where((element) {
+          bool exists = false;
+          for (var d in data) {
+            if (element.dateTime.hour == d.dateTime.hour &&
+                element.dateTime.minute == d.dateTime.minute) {
+              exists = true;
+            }
+          }
+          return exists;
+        })
+        .map((e) =>
+            FlSpot(lastWeeksData.indexOf(e) as double, e.amount as double))
+        .toList();
+    return spots;
   }
 
   Widget leftTitleWidgets(double value, TitleMeta meta) {
@@ -346,211 +302,65 @@ class _OccupancyDataChartState extends State<OccupancyDataChart> {
     return Text(text, style: style, textAlign: TextAlign.left);
   }
 
-  List<Occupancy> getDataForDate(DateTime day) {
-    List<Occupancy> dayData = widget.data
-        .where((element) =>
-            DateTime(day.year, day.month, day.day) ==
-            DateTime(element.dateTime.year, element.dateTime.month,
-                element.dateTime.day))
-        .toList();
-    dayData.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
-    return dayData;
-  }
-
-  List<FlSpot> getFLSpotForDate(DateTime day) {
-    List<Occupancy> dayData = widget.data
-        .where((element) =>
-            DateTime(day.year, day.month, day.day) ==
-            DateTime(element.dateTime.year, element.dateTime.month,
-                element.dateTime.day))
-        .toList();
-    dayData.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
-    return dayData
-        .map((e) => FlSpot(dayData.indexOf(e) as double, e.amount as double))
-        .toList();
-  }
-
-  List<FlSpot> getFLSpotForDateAverage(DateTime day){
-    int total = 0;
-    List<Occupancy> dayData = widget.data
-        .where((element) =>
-    DateTime(day.year, day.month, day.day) ==
-        DateTime(element.dateTime.year, element.dateTime.month,
-            element.dateTime.day))
-        .toList();
-    dayData.sort((a, b) => (a.dateTime).compareTo(b.dateTime));
-
-    for (var element in widget.data.where((element) =>
-    DateTime(day.year, day.month, day.day) ==
-        DateTime(element.dateTime.year, element.dateTime.month,
-            element.dateTime.day))) {
-      total += element.amount;
+  Widget bottomTitleWidgets(double value, TitleMeta meta) {
+    const style = TextStyle(
+      fontWeight: FontWeight.bold,
+      fontSize: 16,
+    );
+    Widget text;
+    if (checkTime(value, "01:00")) {
+      text = const Text('1:00', style: style);
+    } else if (checkTime(value, "02:00")) {
+      text = const Text('\n2:00', style: style);
+    } else if (checkTime(value, "06:00")) {
+      text = const Text('\n6:00', style: style);
+    } else if (checkTime(value, "07:00")) {
+      text = const Text('7:00', style: style);
+    } else if (checkTime(value, "08:00")) {
+      text = const Text('\n8:00', style: style);
+    } else if (checkTime(value, "09:00")) {
+      text = const Text('9:00', style: style);
+    } else if (checkTime(value, "10:00")) {
+      text = const Text('\n10:00', style: style);
+    } else if (checkTime(value, "11:00")) {
+      text = const Text('11:00', style: style);
+    } else if (checkTime(value, "12:00")) {
+      text = const Text('\n12:00', style: style);
+    } else if (checkTime(value, "13:00")) {
+      text = const Text('13:00', style: style);
+    } else if (checkTime(value, "14:00")) {
+      text = const Text('\n14:00', style: style);
+    } else if (checkTime(value, "15:00")) {
+      text = const Text('15:00', style: style);
+    } else if (checkTime(value, "16:00")) {
+      text = const Text('\n16:00', style: style);
+    } else if (checkTime(value, "17:00")) {
+      text = const Text('17:00', style: style);
+    } else if (checkTime(value, "18:00")) {
+      text = const Text('\n18:00', style: style);
+    } else if (checkTime(value, "19:00")) {
+      text = const Text('19:00', style: style);
+    } else if (checkTime(value, "20:00")) {
+      text = const Text('\n20:00', style: style);
+    } else if (checkTime(value, "21:00")) {
+      text = const Text('21:00', style: style);
+    } else if (checkTime(value, "22:00")) {
+      text = const Text('\n22:00', style: style);
+    } else if (checkTime(value, "23:00")) {
+      text = const Text('23:00', style: style);
+    } else if (checkTime(value, "00:00")) {
+      text = const Text('\n00:00', style: style);
+    } else {
+      text = const Text('');
     }
-    return dayData
-        .map((e) => FlSpot(dayData.indexOf(e) as double, total/dayData.length))
-        .toList();
-  }
 
-  LineChartData mainData() {
-    var maxYVal =
-    widget.data.map((e) => e.amount).toList().reduce(max).toDouble();
-    return LineChartData(
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: true,
-        horizontalInterval: 10,
-        verticalInterval: 5,
-        getDrawingHorizontalLine: (value) {
-          return FlLine(
-            color: Colors.lightBlue,
-            strokeWidth: 1,
-          );
-        },
-        getDrawingVerticalLine: (value) {
-          return FlLine(
-            color: Colors.teal,
-            strokeWidth: 1,
-          );
-        },
-      ),
-      lineTouchData: LineTouchData(
-        touchTooltipData: LineTouchTooltipData(
-          //tooltipBgColor: Colors.grey,
-          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-            return [
-              LineTooltipItem(
-                "${getDataForDate(selectedDate)[touchedBarSpots[0].x.toInt()].amount}\n(${getDataForDate(selectedDate)[touchedBarSpots[0].x.toInt()].percent} %)",
-                const TextStyle(color: Colors.tealAccent)),
-            ];
-          },
-        ),
-      ),
-      titlesData: FlTitlesData(
-        show: true,
-        rightTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        topTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 55,
-            interval: 1,
-            getTitlesWidget: bottomTitleWidgets,
-          ),
-        ),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 1,
-            getTitlesWidget: leftTitleWidgets,
-            reservedSize: 42,
-          ),
-        ),
-      ),
-      borderData: FlBorderData(
-        show: true,
-        border: Border.all(color: const Color(0xff37434d)),
-      ),
-      minX: 0,
-      maxX: getDataForDate(selectedDate).length.toDouble() - 1,
-      minY: 0,
-      maxY: maxYVal * 1.1,
-      lineBarsData: [
-        LineChartBarData(
-          spots: getFLSpotForDate(selectedDate),
-          isCurved: false,
-          gradient: LinearGradient(
-            colors: gradientColors,
-          ),
-          barWidth: 5,
-          isStrokeCapRound: true,
-          dotData: FlDotData(
-            show: false,
-          ),
-          belowBarData: BarAreaData(
-            show: true,
-            gradient: LinearGradient(
-              colors: gradientColors
-                  .map((color) => color.withOpacity(0.3))
-                  .toList(),
-            ),
-          ),
-        ),
-      ],
+    return SideTitleWidget(
+      axisSide: meta.axisSide,
+      child: text,
     );
   }
 
-  LineChartData avgData() {
-    var maxYVal =
-    widget.data.map((e) => e.amount).toList().reduce(max).toDouble();
-    return LineChartData(
-      gridData: FlGridData(
-        show: false,
-        drawVerticalLine: false,
-        horizontalInterval: 10,
-        verticalInterval: 5,
-        getDrawingHorizontalLine: (value) {
-          return FlLine(
-            color: Colors.lightBlue,
-            strokeWidth: 1,
-          );
-        },
-        getDrawingVerticalLine: (value) {
-          return FlLine(
-            color: Colors.teal,
-            strokeWidth: 1,
-          );
-        },
-      ),
-      titlesData: FlTitlesData(
-        show: true,
-        rightTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        topTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 55,
-            interval: 1,
-            getTitlesWidget: bottomTitleWidgets,
-          ),
-        ),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 1,
-            getTitlesWidget: leftTitleWidgets,
-            reservedSize: 42,
-          ),
-        ),
-      ),
-      borderData: FlBorderData(
-        show: true,
-        border: Border.all(color: const Color(0xff37434d)),
-      ),
-      minX: 0,
-      maxX: getDataForDate(selectedDate).length.toDouble() - 1,
-      minY: 0,
-      maxY: maxYVal * 1.1,
-      lineBarsData: [
-        LineChartBarData(
-          show: true,
-          spots: getFLSpotForDateAverage(selectedDate),
-          isCurved: false,
-          color: const Color.fromRGBO(179, 210, 65, 1),
-          dotData: FlDotData(
-            show: false,
-          ),
-          barWidth: 5,
-          isStrokeCapRound: true,
-        ),
-      ],
-    );
+  bool checkTime(double value, String time) {
+    return data[value.toInt()].dateTime.toString().split(" ")[1].contains(time);
   }
 }

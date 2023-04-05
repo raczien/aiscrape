@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:aiscrape/Occupancy.dart';
-import 'package:aiscrape/chart.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:table_calendar/table_calendar.dart';
+
+import 'calendar.dart';
+import 'chart.dart';
 
 class ChartPage extends StatefulWidget {
   static String routeName = '/chartPage';
@@ -14,30 +13,39 @@ class ChartPage extends StatefulWidget {
 }
 
 class _ChartPageState extends State<ChartPage> {
+  DateTime pickedDate = DateTime.now();
 
-  Future<List<Occupancy>> getData() async {
-    return await FirebaseFirestore.instance.collection('occupancy').get().then(
-        (value) =>
-            value.docs.map((doc) => Occupancy.fromJson(doc.data())).toList());
+  DateTime getPickedDate() => pickedDate;
+
+  setNewPickedDate(DateTime newDateTime) {
+    setState(() {
+      pickedDate = newDateTime;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: FutureBuilder<List<Occupancy>>(
-        future: getData(),
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            final data = snapshot.data!;
-            return OccupancyDataChart(
-              data: data,
-            );
-          } else {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-        },
+      body: Center(
+        child: SingleChildScrollView(
+          child: SizedBox(
+            width: MediaQuery.of(context).size.width > 1000
+                ? MediaQuery.of(context).size.width * 0.6
+                : MediaQuery.of(context).size.width,
+            child: Column(
+              children: [
+                Calendar(
+                  getDate: getPickedDate,
+                  setDate: setNewPickedDate,
+                ),
+                OccupancyChart(
+                  getDate: getPickedDate,
+                  setDate: setNewPickedDate,
+                )
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
