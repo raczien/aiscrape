@@ -69,7 +69,7 @@ class _OccupancyChartState extends State<OccupancyChart> {
                       bottom: 12,
                     ),
                     child: LineChart(
-                      checkLastWeekSummary ? mainData() : mainData(),
+                      checkLastWeekSummary ? mainData() : weekComparison(),
                     ),
                   ),
                 );
@@ -79,6 +79,97 @@ class _OccupancyChartState extends State<OccupancyChart> {
                 );
               }
             }),
+      ],
+    );
+  }
+// TODO
+  LineChartData weekComparison() {
+    var allData = data + lastWeekData;
+    var maxYVal = allData.map((e) => e.amount).toList().reduce(max).toDouble();
+    return LineChartData(
+      gridData: FlGridData(
+        show: true,
+        drawVerticalLine: true,
+        horizontalInterval: 10,
+        verticalInterval: 4,
+        getDrawingHorizontalLine: (value) {
+          return FlLine(
+            color: Colors.lightBlue,
+            strokeWidth: 1,
+          );
+        },
+        getDrawingVerticalLine: (value) {
+          return FlLine(
+            color: Colors.teal,
+            strokeWidth: 1,
+          );
+        },
+      ),
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+            return touchedBarSpots.map((e) {
+              return LineTooltipItem("${e.y} (${(e.y / 485 * 100).toInt()} %)",
+                  const TextStyle(color: Colors.tealAccent));
+            }).toList();
+          },
+        ),
+      ),
+      titlesData: FlTitlesData(
+        show: true,
+        rightTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        topTitles: AxisTitles(
+          sideTitles: SideTitles(showTitles: false),
+        ),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 55,
+            interval: 1,
+            getTitlesWidget: bottomTitleWidgets,
+          ),
+        ),
+        leftTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            interval: 1,
+            getTitlesWidget: leftTitleWidgets,
+            reservedSize: 42,
+          ),
+        ),
+      ),
+      borderData: FlBorderData(
+        show: true,
+        border: Border.all(color: const Color(0xff37434d)),
+      ),
+      minX: 0,
+      maxX: data.length.toDouble() - 1,
+      minY: 0,
+      maxY: maxYVal * 1.1,
+      lineBarsData: [
+        LineChartBarData(
+          spots: getFLSpotForDate(),
+          isCurved: false,
+          gradient: LinearGradient(
+            colors: gradientColors,
+          ),
+          barWidth: 5,
+          isStrokeCapRound: true,
+          dotData: FlDotData(
+            show: false,
+          ),
+          belowBarData: BarAreaData(
+            show: true,
+            gradient: LinearGradient(
+              colors: gradientColors
+                  .map((color) => color.withOpacity(0.3))
+                  .toList(),
+            ),
+          ),
+        ),
+        ...lineBarsData,
       ],
     );
   }
