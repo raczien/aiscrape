@@ -23,10 +23,12 @@ class _OccupancyChartState extends State<OccupancyChart> {
   }
 
   late List<Occupancy> data;
-  List<LineChartBarData> lineBarsData = [];
+  List<LineChartBarData> lastWeekLineBarsData = [];
+  List<LineChartBarData> averageLineBarsData = [];
   List<Occupancy> lastWeekData = [];
   var currentSelectedDate = DateTime.now();
   bool checkLastWeekSummary = false;
+  bool showAverage = false;
 
   @override
   Widget build(BuildContext context) {
@@ -34,24 +36,53 @@ class _OccupancyChartState extends State<OccupancyChart> {
     if (DateTime(currentSelectedDate.year, currentSelectedDate.month,
             currentSelectedDate.day) !=
         DateTime(calendarDate.year, calendarDate.month, calendarDate.day)) {
-      lineBarsData = [];
+      lastWeekLineBarsData = [];
+      averageLineBarsData = [];
+      setState(() {
+        showAverage = false;
+        checkLastWeekSummary = false;
+      });
+
     }
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8.0),
-          child: FilledButton.tonal(
-            onPressed: setLastWeekLineBarData,
-            /*style:
-                OutlinedButton.styleFrom(primary: Colors.teal.shade500),*/
-            child: const Text(
-              "Vergleich mit Vorwoche",
-              style: TextStyle(
-                color: Color.fromRGBO(165, 187, 65, 1.0),
-                fontSize: 20,
-              ),
-            ),
-          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Compare with last week', style: TextStyle(fontSize: 22)),
+            Switch(
+                value: checkLastWeekSummary,
+                onChanged: (value) {
+                  setState(() {
+                    checkLastWeekSummary = value;
+                  });
+                  if(checkLastWeekSummary){
+                    setLastWeekLineBarData();
+                  } else {
+                    setState(() {
+                      lastWeekLineBarsData.clear();
+                    });
+                  }
+                }),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Show days average', style: TextStyle(fontSize: 22)),
+            Switch(
+                value: showAverage,
+                onChanged: (value) {
+                  setState(() {
+                    showAverage = value;
+                  });
+                  if(showAverage){
+                    setAverageWeekLineBarData();
+                  } else {
+                    averageLineBarsData.clear();
+                  }
+                }),
+          ],
         ),
         FutureBuilder(
             future: getData(),
@@ -68,9 +99,7 @@ class _OccupancyChartState extends State<OccupancyChart> {
                       top: 24,
                       bottom: 12,
                     ),
-                    child: LineChart(
-                      checkLastWeekSummary ? mainData() : weekComparison(),
-                    ),
+                    child: LineChart(mainData()),
                   ),
                 );
               } else {
@@ -79,97 +108,6 @@ class _OccupancyChartState extends State<OccupancyChart> {
                 );
               }
             }),
-      ],
-    );
-  }
-// TODO
-  LineChartData weekComparison() {
-    var allData = data + lastWeekData;
-    var maxYVal = allData.map((e) => e.amount).toList().reduce(max).toDouble();
-    return LineChartData(
-      gridData: FlGridData(
-        show: true,
-        drawVerticalLine: true,
-        horizontalInterval: 10,
-        verticalInterval: 4,
-        getDrawingHorizontalLine: (value) {
-          return FlLine(
-            color: Colors.lightBlue,
-            strokeWidth: 1,
-          );
-        },
-        getDrawingVerticalLine: (value) {
-          return FlLine(
-            color: Colors.teal,
-            strokeWidth: 1,
-          );
-        },
-      ),
-      lineTouchData: LineTouchData(
-        touchTooltipData: LineTouchTooltipData(
-          getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
-            return touchedBarSpots.map((e) {
-              return LineTooltipItem("${e.y} (${(e.y / 485 * 100).toInt()} %)",
-                  const TextStyle(color: Colors.tealAccent));
-            }).toList();
-          },
-        ),
-      ),
-      titlesData: FlTitlesData(
-        show: true,
-        rightTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        topTitles: AxisTitles(
-          sideTitles: SideTitles(showTitles: false),
-        ),
-        bottomTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 55,
-            interval: 1,
-            getTitlesWidget: bottomTitleWidgets,
-          ),
-        ),
-        leftTitles: AxisTitles(
-          sideTitles: SideTitles(
-            showTitles: true,
-            interval: 1,
-            getTitlesWidget: leftTitleWidgets,
-            reservedSize: 42,
-          ),
-        ),
-      ),
-      borderData: FlBorderData(
-        show: true,
-        border: Border.all(color: const Color(0xff37434d)),
-      ),
-      minX: 0,
-      maxX: data.length.toDouble() - 1,
-      minY: 0,
-      maxY: maxYVal * 1.1,
-      lineBarsData: [
-        LineChartBarData(
-          spots: getFLSpotForDate(),
-          isCurved: false,
-          gradient: LinearGradient(
-            colors: gradientColors,
-          ),
-          barWidth: 5,
-          isStrokeCapRound: true,
-          dotData: FlDotData(
-            show: false,
-          ),
-          belowBarData: BarAreaData(
-            show: true,
-            gradient: LinearGradient(
-              colors: gradientColors
-                  .map((color) => color.withOpacity(0.3))
-                  .toList(),
-            ),
-          ),
-        ),
-        ...lineBarsData,
       ],
     );
   }
@@ -190,7 +128,33 @@ class _OccupancyChartState extends State<OccupancyChart> {
       ),
     );
     setState(() {
-      lineBarsData.add(data);
+      lastWeekLineBarsData.add(data);
+    });
+  }
+
+  setAverageWeekLineBarData() async {
+    int sum = 0;
+    for(var d in data){
+      sum += d.amount;
+    }
+    List<FlSpot> spots = [];
+    for(int i = 0; i < data.length; i++){
+      spots.add(FlSpot(i as double, sum~/data.length as double));
+    }
+    var lcbd = LineChartBarData(
+      spots: spots,
+      isCurved: false,
+      gradient: const LinearGradient(
+        colors: [Color.fromRGBO(255, 255, 0, 1), Color.fromRGBO(255, 210, 0, 1),],
+      ),
+      barWidth: 5,
+      isStrokeCapRound: true,
+      dotData: FlDotData(
+        show: false,
+      ),
+    );
+    setState(() {
+      averageLineBarsData.add(lcbd);
     });
   }
 
@@ -280,7 +244,7 @@ class _OccupancyChartState extends State<OccupancyChart> {
             ),
           ),
         ),
-        ...lineBarsData,
+        ...lastWeekLineBarsData + averageLineBarsData,
       ],
     );
   }
@@ -302,21 +266,20 @@ class _OccupancyChartState extends State<OccupancyChart> {
     setState(() {
       lastWeekData = lastWeeksData;
     });
-    var spots = lastWeeksData
-        .where((element) {
-          bool exists = false;
-          for (var d in data) {
-            if (element.dateTime.hour == d.dateTime.hour &&
-                element.dateTime.minute == d.dateTime.minute) {
-              exists = true;
-            }
-          }
-          return exists;
-        })
-        .map((e) =>
-            FlSpot(lastWeeksData.indexOf(e) as double, e.amount as double))
-        .toList();
-    return spots;
+    var maxDateTime =
+        data.map((e) => e.dateTime).reduce((a, b) => a.isAfter(b) ? a : b);
+    List<FlSpot> lastWeekSpots = [];
+    for (var element in lastWeekData) {
+      for (var d in data) {
+        if (element.dateTime.hour == d.dateTime.hour &&
+            element.dateTime.minute == d.dateTime.minute &&
+            element.dateTime.isBefore(maxDateTime)) {
+          lastWeekSpots
+              .add(FlSpot(data.indexOf(d) as double, element.amount as double));
+        }
+      }
+    }
+    return lastWeekSpots;
   }
 
   Widget leftTitleWidgets(double value, TitleMeta meta) {
